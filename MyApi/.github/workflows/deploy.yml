@@ -1,0 +1,60 @@
+name: Build and Deploy API to Azure VM
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AZURE_RESOURCE_GROUP: demo-rg
+  AZURE_VM_NAME: api-vm
+  AZURE_USERNAME: azureuser
+  VM_IP: ${{ secrets.API_VM_PUBLIC_IP }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Build .NET API
+      run: |
+        cd MyApi
+        dotnet publish -c Release -o ../publish
+
+    - name: Copy deployment files
+      run: |
+        cp deploy/deploy.sh publish/
+        cp deploy/install.service publish/
+
+    - name: Run deploy script via SSH
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ env.VM_IP }}
+        username: ${{ env.AZURE_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          rm -rf ~/deploy
+          mkdir -p ~/deploy
+          exit 0
+
+    - name: Upload publish to VM
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ env.VM_IP }}
+        username: ${{ env.AZURE_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        source: "publish/*"
+        target: "~/deploy"
+
+    - name: Execute deploy on VM
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ env.VM_IP }}
+        username: ${{ env.AZURE_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd ~/deploy
+          chmod +x deploy.sh
+          sudo ./deploy.sh
